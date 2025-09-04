@@ -1,28 +1,49 @@
-import json
-import requests
 import os
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from dotenv import load_dotenv
 
-BREVO_API_KEY = os.getenv('BREVO_API_KEY')
-BREVO_SENDER_EMAIL = os.getenv('BREVO_SENDER_EMAIL')
+# Loading environment variables from .env file
+load_dotenv()
 
-def send_otp_email(to_email: str, otp: str):
-    url = "https://api.brevo.com/v3/smtp/email"
-    headers = {
-        "accept": "application/json",
-        "api-key": BREVO_API_KEY,
-        "content-type": "application/json",
-    }
-    payload = {
-        "sender": {"name": "SmartPitch", "email": BREVO_SENDER_EMAIL},
-        "to": [{"email": to_email}],
-        "subject": "Your SmartPitch OTP Code",
-        "textContent": f"Your SmartPitch OTP code is: {otp}. It is valid for 5 minutes."
-    }
+SMTP_HOST = os.getenv('SMTP_HOST')
+SMTP_PORT = int(os.getenv('SMTP_PORT', 587))
+SMTP_USERNAME = os.getenv('SMTP_USERNAME')
+SMTP_PASSWORD = os.getenv('SMTP_PASSWORD')
+EMAIL_FROM = os.getenv('EMAIL_FROM')
+EMAIL_FROM_NAME = os.getenv('EMAIL_FROM_NAME')
 
-    response = requests.post(url, headers=headers, json=payload)
-    if response.status_code == 201:
-        print("OTP email sent successfully")
+def send_otp_email(to_email: str, otp_code: str):
+    # Create message container
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = 'Your SmartPitch OTP Code'
+    msg['From'] = f"{EMAIL_FROM_NAME} <{EMAIL_FROM}>"
+    msg['To'] = to_email
+
+    # Email body in HTML
+    html_content = f"""
+    <html>
+      <body>
+        <p>Dear user,</p>
+        <p>Your OTP code is: <b>{otp_code}</b></p>
+        <p>This code is valid for 5 minutes.</p>
+      </body>
+    </html>
+    """
+
+    # Attaching HTML content
+    msg.attach(MIMEText(html_content, 'html'))
+
+    # Connect to SMTP server and send email
+    try:
+        server = smtplib.SMTP(SMTP_HOST, SMTP_PORT)
+        server.starttls()
+        server.login(SMTP_USERNAME, SMTP_PASSWORD)
+        server.sendmail(EMAIL_FROM, to_email, msg.as_string())
+        server.quit()
+        print(f"OTP email sent to {to_email}")
         return True
-    else:
-        print(f"Failed to send OTP email: {response.status_code} - {response.text}")
+    except Exception as e:
+        print(f"Failed to send OTP email: {e}")
         return False
