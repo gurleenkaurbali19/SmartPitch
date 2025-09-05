@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from app import models
-from app.security import hash_password, verify_password
+from smartPitchBackend.app.utils.security import hash_password, verify_password
 
 
 def create_user(db: Session, email: str, password: str) -> models.User:

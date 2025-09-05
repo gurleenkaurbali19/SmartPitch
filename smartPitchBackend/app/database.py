@@ -2,6 +2,8 @@ from sqlalchemy import create_engine  # For connecting to the database
 from sqlalchemy.ext.declarative import declarative_base  # To create base class for ORM models
 from sqlalchemy.orm import sessionmaker  # To create DB session factory
 
+from sqlalchemy.orm import Session
+
 # Database URL - SQLite file in current folder
 SQLALCHEMY_DATABASE_URL = "sqlite:///./smartpitch.db"  
 
@@ -18,3 +20,12 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 # Base class that database models will inherit
 # It keeps track of all models and mappings to tables
 Base = declarative_base()
+
+  
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

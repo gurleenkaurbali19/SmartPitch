@@ -9,3 +9,7 @@ async def root():
 
 # Include the auth router
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
+
+
+#uvicorn app.main:app --reload
+
