@@ -1,5 +1,5 @@
 #This file will contain your authentication-related endpoints, including OTP request and verification.
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, status, Depends
 from app.schemas.auth_schemas import EmailSchema, OTPVerifySchema
 from app.utils.otp_utils import generate_otp
 from app.utils.otp_cache import store_otp, is_blocked, verify_otp, is_otp_verified
@@ -13,8 +13,10 @@ from app.utils.security import hash_password
 from app.utils.otp_cache import clear_otp_verified, otp_cache
 from app.crud import create_user
 from app.database import get_db
-from fastapi import Depends
 from app.models import User
+from fastapi.security import OAuth2PasswordRequestForm
+from app.utils.security import verify_password
+from app.utils.auth_handler import create_access_token
 
 
 
@@ -76,5 +78,18 @@ def set_password(data: PasswordCreateSchema, db: Session = Depends(get_db)):
 
     return {"message": "Account created successfully. You can now log in."}
 
+#login endpoint
+@router.post("/login")
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    # Fetch user by email (username)
+    user = db.query(User).filter(User.email == form_data.username).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
 
-  
+    # Verify password
+    if not verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
+
+    # Create JWT token
+    access_token = create_access_token(data={"sub": user.email})
+    return {"access_token": access_token, "token_type": "bearer"}
