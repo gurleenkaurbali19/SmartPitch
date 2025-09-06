@@ -17,15 +17,23 @@ from app.models import User
 from fastapi.security import OAuth2PasswordRequestForm
 from app.utils.security import verify_password
 from app.utils.auth_handler import create_access_token
+from app.view_users import get_user_by_email
 
 
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(tags=["auth"])
+
+
 
 # OTP Request Endpoint:
 @router.post("/request-otp")
 def request_otp(data: EmailSchema):
     email = data.email
+    
+    # Check if user exists
+    existing_user = get_user_by_email(email)
+    if existing_user:
+        raise HTTPException(status_code=400, detail="User already exists")
 
     if is_blocked(email):
         raise HTTPException(status_code=403, detail="Too many failed attempts. Try again later.")
@@ -37,6 +45,7 @@ def request_otp(data: EmailSchema):
         return {"message": "OTP sent to your email."}
     else:
         raise HTTPException(status_code=500, detail="Failed to send OTP email.")
+
 
 # OTP Verification Endpoint 
 @router.post("/verify-otp")
