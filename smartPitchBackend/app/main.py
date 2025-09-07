@@ -1,11 +1,10 @@
 from fastapi import FastAPI
-from app.routers import auth
 from fastapi.middleware.cors import CORSMiddleware
+from app.routers import auth, upload  # Import new upload router
+
 app = FastAPI()
 
-origins = [
-    "http://localhost:3000",  
-]
+origins = ["http://localhost:3000"]
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,6 +21,5 @@ async def root():
 # Include the auth router
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 
-
-#uvicorn app.main:app --reload
-
+# Include the upload router
+app.include_router(upload.router, prefix="/upload", tags=["upload"])
