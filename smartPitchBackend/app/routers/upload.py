@@ -5,14 +5,16 @@ from app.utils.auth_handler import decode_access_token
 from app.utils.upload_utils import (
     save_resume_file,
     extract_text_from_pdf,
-    generate_embedding,
-    save_embedding,
+    generate_embeddings_for_sections,
+    save_embeddings,
     update_resume_record,
     update_vector_meta_record
 )
 from app.database import get_db
 
+
 router = APIRouter()
+
 
 @router.post("/resume", dependencies=[Depends(JWTBearer())], status_code=status.HTTP_201_CREATED)
 async def upload_resume(
@@ -33,14 +35,14 @@ async def upload_resume(
     # Save uploaded resume PDF
     file_path = save_resume_file(user_email, file)
 
-    # Extract text from the saved PDF file
-    text = extract_text_from_pdf(file_path)
+    # Extract section-wise text from PDF
+    sections_dict = extract_text_from_pdf(file_path)
 
-    # Generate vector embeddings from text
-    embedding = generate_embedding(text)
+    # Generate embeddings for each section and its items
+    embeddings_dict = generate_embeddings_for_sections(sections_dict)
 
-    # Save embeddings as numpy file
-    save_embedding(user_email, embedding)
+    # Save embeddings as .npy files section-wise in user subfolder
+    save_embeddings(user_email, embeddings_dict)
 
     # Update the resume metadata record in DB
     resume_record = update_resume_record(db, user_email, f"{user_email}.pdf")

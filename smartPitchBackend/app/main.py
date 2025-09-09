@@ -23,3 +23,8 @@ app.include_router(auth.router, prefix="/auth", tags=["auth"])
 
 # Include the upload router
 app.include_router(upload.router, prefix="/upload", tags=["upload"])
+
+
+
+#uvicorn app.main:app --reload
+
