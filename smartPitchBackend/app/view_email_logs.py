@@ -1,16 +1,18 @@
 from app.database import SessionLocal
-from app.models import EmailLog, User
+from app.models import EmailLog
+from sqlalchemy.orm import Session
 
-def view_all_email_logs():
-    db = SessionLocal()
-    try:
-        email_logs = db.query(EmailLog).all()
-        for log in email_logs:
-            user = db.query(User).filter(User.user_id == log.user_id).first()
-            user_email = user.email if user else "Unknown"
-            print(f"Log ID: {log.sent_id}, User ID: {log.user_id} ({user_email}), Recipient: {log.recipient_email}, Subject: {log.subject}, Sent At: {log.sent_at}")
-    finally:
-        db.close()
+def print_email_logs(db: Session):
+    print("\nTable: EmailLogs")
+    emails = db.query(EmailLog).all()
+    if not emails:
+        print(" No rows found.")
+    for e in emails:
+        print(vars(e))
 
 if __name__ == "__main__":
-    view_all_email_logs()
+    db = SessionLocal()
+    try:
+        print_email_logs(db)
+    finally:
+        db.close()
