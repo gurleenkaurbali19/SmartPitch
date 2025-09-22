@@ -10,13 +10,20 @@ import uuid
 from fastapi import UploadFile
 import fitz
 import re
+import json
+from typing import Dict, List
+import glob
 
-# Loading the sentence transformer model once
-model = SentenceTransformer('all-mpnet-base-v2')
+# Get base directory relative to this file's location
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-RESUME_VECTORS_DIR = r"D:\SmartPitch\smartPitchBackend\resume_vectors"
+# Use environment variables as overrides, or fallback to base dir + relative folder
+RESUME_VECTORS_DIR = os.getenv("RESUME_VECTORS_DIR", os.path.join(BASE_DIR, "..", "resume_vectors"))
+RESUME_UPLOAD_DIR = os.getenv("RESUME_UPLOAD_DIR", os.path.join(BASE_DIR, "..", "resume_uploads"))
 
-RESUME_UPLOAD_DIR = r"D:\SmartPitch\smartPitchBackend\resume_uploads"
+# Normalize absolute paths
+RESUME_VECTORS_DIR = os.path.abspath(RESUME_VECTORS_DIR)
+RESUME_UPLOAD_DIR = os.path.abspath(RESUME_UPLOAD_DIR)
 
 def save_resume_file(user_identifier: str, file: UploadFile) -> str:
     """
@@ -35,127 +42,262 @@ def save_resume_file(user_identifier: str, file: UploadFile) -> str:
 
 
 
-def extract_text_from_pdf(pdf_path: str) -> dict:
+def extract_text_from_pdf(pdf_path: str) -> Dict[str, List[str]]:
     """
-    Extract section-wise from a resume,
-    plus extract name, emails, phones, and links grouped under one 'header' key
-    Returns dict with headers and sections as keys.
+    Extract text and links from resume PDF:
+    - Extract header info: name, emails, phones, all links (from annotations and text).
+    - Extract sections by headings.
+    - Always return each section as list of string items for consistent output.
+    - Links like 'live project', 'certificate', 'github demo' are excluded from main text sections.
     """
+
+    # section title list
     section_titles = [
-        "summary", "objective", "education", "experience",
-        "skills", "projects", "certifications", "contact", "links"
+        "summary", "objective", "education", "experience", "work experience",
+        "skills", "projects", "certifications", "contact", "links", "profile"
     ]
-    
+
+    # defining pattern to match the section titles
     pattern = re.compile(
-        rf"(?im)^({'|'.join([re.escape(t) for t in section_titles])})\b.*", 
+        rf"(?im)^({'|'.join([re.escape(t) for t in section_titles])})",
         re.MULTILINE
     )
-    
+
+    # helper function to split the content inside a section based on separators
+    def split_section_text_to_list(text: str):
+        items = re.split(r"\n{2,}|[\n*•\-]\s*|\n\d+\.\s*|\|", text)
+        items = [item.strip() for item in items if item.strip()]
+        return items
+
+    # read pdf
     doc = fitz.open(pdf_path)
-    text = "\n".join(page.get_text() for page in doc)
-    
-    matches = list(pattern.finditer(text))
-    sections_dict = {}
-    
-    # Extract header text (before first section)
-    header_text = ""
-    if matches:
-        first_section_start = matches[0].start()
-        header_text = text[:first_section_start].strip()
-    else:
-        header_text = text.strip()
-    
-    # Extract emails
-    email_pattern = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
-    emails = list(set(email_pattern.findall(text)))
-    
-    # Extract phones
-    phone_pattern = re.compile(r"(\+?\d{1,4}?[-.\s]?)?(\(?\d{2,5}\)?[-.\s]?)?[-\d.\s]{5,15}\d")
-    phones_raw = phone_pattern.findall(text)
-    phones = list(set("".join(p).strip() for p in phones_raw if any(p)))
-    
-    # Extract relevant links (github, linkedin, portfolio)
-    link_pattern = re.compile(r"(https?://[^\s]+)")
-    links_all = link_pattern.findall(text.lower())
-    links = list(set(l for l in links_all if "github.com" in l or "linkedin.com" in l or "portfolio" in l or "personal" in l))
-    
-    # Extract name heuristic: first non-empty line of header_text
+    full_text = "\n".join(page.get_text() for page in doc)
+
+    # Extract all links (from annotations and text)
+    annotation_links = []
+    for page in doc:
+        for link in page.get_links():
+            if "uri" in link:
+                annotation_links.append(link["uri"])
+    annotation_links = list(set(annotation_links))
+
+    text_links = list(set(re.findall(r"https?://[^\s]+", full_text)))
+    combined_links = list(set(annotation_links + text_links))
+
+    # locate section titles
+    matches = list(pattern.finditer(full_text))
+
+    # header text before first section
+    header_text = full_text[: matches[0].start()] if matches else full_text
+    header_text = header_text.strip()
+
+    # extract emails
+    emails = list(set(re.findall(
+        r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b", full_text
+    )))
+
+    # extract phone numbers
+    phone_pattern = re.compile(r"(\+?\d[\d\s\-\(\)]{7,}\d)")
+    phones = list(set(phone.strip() for phone in phone_pattern.findall(full_text)))
+
+    # name from header (first non-empty line)
     name = ""
     for line in header_text.splitlines():
-        line = line.strip()
-        if line:
-            name = line
+        if line.strip():
+            name = line.strip()
             break
-    
-    # Compose header list
-    header_list = []
+
+    # prepare header
+    header_data = []
     if name:
-        header_list.append(name)
-    header_list.extend(emails)
-    header_list.extend(phones)
-    header_list.extend(links)
-    sections_dict["header"] = header_list
-    
-    # Extract other sections like before
+        header_data.append(name)
+    header_data.extend(emails)
+    header_data.extend(phones)
+    header_data.extend(combined_links)
+
+    sections_dict = {"header": list(dict.fromkeys(header_data))}
+
     if matches:
-        section_positions = [m.start() for m in matches] + [len(text)]
-        section_names = [m.group(1).strip().lower() for m in matches]
-        for i, section in enumerate(section_names):
-            section_text = text[section_positions[i]:section_positions[i+1]].strip()
-            if section in ["skills", "projects", "certifications"]:
-                items = re.split(r"\n[-*•]\s*|\n\d+\.\s*", section_text)
+        section_positions = [m.start() for m in matches] + [len(full_text)]
+        section_names = [m.group(1).lower() for m in matches]
+
+        for idx, section_name in enumerate(section_names):
+            section_start, section_end = section_positions[idx], section_positions[idx + 1]
+            section_text = full_text[section_start:section_end]
+
+            # Remove heading line itself
+            section_text = '\n'.join(section_text.split('\n')[1:]).strip()
+
+            # Extract links inside this section
+            section_links = list(set(re.findall(r"https?://[^\s]+", section_text)))
+
+            # Remove lines that are just links
+            cleaned_lines = []
+            for line in section_text.splitlines():
+                if re.match(r"https?://", line.strip()):
+                    continue
+                cleaned_lines.append(line)
+            section_text = "\n".join(cleaned_lines)
+
+            # Handle specific section types
+            if section_name in ["summary", "profile", "objective", "about"]:
+                sections_dict[section_name] = section_text.replace('\n', ' ').strip()
+            elif section_name in ["skills", "projects", "certifications"]:
+                items = re.split(r"\n{1,}|[\n*•\-]\s*|\n\d+\.\s*|;", section_text)
                 items = [item.strip() for item in items if item.strip()]
-                if items:
-                    sections_dict[section] = items
+                sections_dict[section_name] = items
             else:
-                if section_text:
-                    sections_dict[section] = section_text
+                items = split_section_text_to_list(section_text)
+                sections_dict[section_name] = items
+
+            if section_links:
+                sections_dict[f"{section_name}_links"] = section_links
     else:
-        # no headings detected
-        if text.strip():
-            sections_dict["full_text"] = text.strip()
-    
+        # No sections found -> fallback
+        if full_text.strip():
+            sections_dict["full_text"] = full_text.strip()
+        if combined_links:
+            sections_dict["full_text_links"] = combined_links
+
     return sections_dict
 
 
-def generate_embeddings_for_sections(sections_dict):
-    """
-    Given sections_dict from extract_text_from_pdf (keys: section names, values: str or list),
-    generate vector embeddings for each section and its items.
-    Returns a nested dict: {section: [embeddings]} for list sections,
-    or {section: embedding} for text sections.
-    """
-    embeddings_dict = {}
+PROJECT_IGNORE_WORDS = {
+    "project link", "link", "live project", "chatbot link",
+    "dashboard", "live demo", "certificate", "link", "|"
+}
 
-    for section, content in sections_dict.items():
-        # If content is a list (skills, projects, etc.), embed each item
+def format_structured_bullets(items):
+    structured = []
+    current = None
+    for item in items:
+        item_clean = item.strip()
+        if not item_clean or item_clean.lower() in PROJECT_IGNORE_WORDS:
+            continue
+        if item_clean.startswith(("–", "-")):
+            if current:
+                current['points'].append(item_clean.lstrip("–-").strip())
+            else:
+                # Bullet but no heading: use 'misc'
+                current = {'name': "misc", 'points': [item_clean.lstrip("–-").strip()]}
+                structured.append(current)
+        else:
+            if current and current['points'] and not current['points'][-1].endswith("."):
+                current['points'][-1] += " " + item_clean
+            else:
+                current = {'name': item_clean, 'points': []}
+                structured.append(current)
+    return structured
+
+
+def merge_empty_points_sequential(sections_list):
+    merged = []
+    i = 0
+    while i < len(sections_list):
+        current = sections_list[i]
+        name_parts = [current['name']]
+        points = current['points']
+
+        # Merge names while points are empty and next entries exist
+        while not points and i + 1 < len(sections_list):
+            i += 1
+            next_entry = sections_list[i]
+            name_parts.append(next_entry['name'])
+            points = next_entry['points']
+            # If points found, stop merging further
+            if points:
+                break
+        
+        merged.append({'name': " ".join(name_parts).strip(), 'points': points})
+        i += 1
+
+    return merged
+
+
+def save_json_sectionwise(user_id, extracted_dict, base_dir="resume_vectors"):
+    user_dir = os.path.join(base_dir, str(user_id))
+    if os.path.exists(user_dir):
+        shutil.rmtree(user_dir)
+    os.makedirs(user_dir, exist_ok=True)
+
+    for section, content in extracted_dict.items():
+        if section in {"projects", "certifications", "experience"} and isinstance(content, list):
+            formatted = format_structured_bullets(content)
+            cleaned = merge_empty_points_sequential(formatted)
+            section_data = cleaned
+        else:
+            section_data = content
+
+        json_path = os.path.join(user_dir, f"{section}.json")
+        with open(json_path, "w", encoding="utf-8") as jf:
+            json.dump(section_data, jf, ensure_ascii=False, indent=2)
+
+    return user_dir
+
+
+def create_section_embeddings(user_id, base_dir="resume_vectors", model_name="sentence-transformers/all-MiniLM-L6-v2"):
+    user_dir = os.path.join(base_dir, str(user_id))
+    if not os.path.exists(user_dir):
+        raise FileNotFoundError(f"User directory {user_dir} does not exist.")
+
+    # Load embedding model once
+    embedder = SentenceTransformer(model_name)
+
+    # Delete any existing .npy files in user folder
+    npy_files = glob.glob(os.path.join(user_dir, "*.npy"))
+    for file in npy_files:
+        try:
+            os.remove(file)
+        except Exception as e:
+            print(f"Warning: Failed to remove file {file}: {str(e)}")
+
+    # Find all JSON files to create embeddings for
+    json_files = glob.glob(os.path.join(user_dir, "*.json"))
+
+    for json_path in json_files:
+        section_name = os.path.splitext(os.path.basename(json_path))[0]
+
+        with open(json_path, "r", encoding="utf-8") as f:
+            content = json.load(f)
+
+        texts_to_embed = []
+
+        # Prepare texts depending on structure
         if isinstance(content, list):
-            embeddings = [model.encode(item) for item in content if item.strip()]
-            embeddings_dict[section] = embeddings
+            # For list of dicts with 'name' and 'points', combine for embedding
+            if content and isinstance(content[0], dict) and "name" in content[0] and "points" in content[0]:
+                for entry in content:
+                    combined_text = entry["name"]
+                    if entry["points"]:
+                        combined_text += " " + " ".join(entry["points"])
+                    texts_to_embed.append(combined_text)
+            else:
+                # Flat list of strings (skills, header)
+                texts_to_embed = content
+        elif isinstance(content, str):
+            texts_to_embed = [content]
         else:
-            # For plain text sections (summary, experience, etc.), embed the text
-            if content.strip():
-                embeddings_dict[section] = model.encode(content)
+            # If unknown format, convert to string and embed
+            texts_to_embed = [json.dumps(content)]
 
-    return embeddings_dict
+        if not texts_to_embed:
+            print(f"No texts to embed in section {section_name}, skipping.")
+            continue
 
-def save_embeddings(user_identifier: str, embeddings_dict: dict):
-    """
-    Saves embeddings provided as a dict {section_name: embedding_or_list_of_embeddings}
-    into the user subfolder inside RESUME_VECTORS_DIR.
-    Each section saved as a separate .npy file, e.g. skills.npy, projects.npy, etc.
-    """
-    user_folder = os.path.join(RESUME_VECTORS_DIR, user_identifier)
-    os.makedirs(user_folder, exist_ok=True)
+        # Generate embeddings
+        embeddings = embedder.encode(texts_to_embed, convert_to_numpy=True)
 
-    for section, emb in embeddings_dict.items():
-        embedding_path = os.path.join(user_folder, f"{section}.npy")
+        # Save embeddings as .npy file
+        npy_path = os.path.join(user_dir, f"{section_name}.npy")
 
-        # Embedding might be a list of numpy arrays or a single numpy array
-        if isinstance(emb, list):
-            np.save(embedding_path, np.array(emb))
-        else:
-            np.save(embedding_path, emb)
+        try:
+            np.save(npy_path, embeddings)
+            print(f"Saved embeddings for section {section_name} at {npy_path}")
+        except Exception as e:
+            print(f"Error saving embeddings for section {section_name}: {str(e)}")
+
+    print(f"All section embeddings created in {user_dir}")
+    return user_dir
 
 
 def update_resume_record(db: Session, user_email: str, filename: str, file_path: str) -> Resume:
@@ -171,13 +313,13 @@ def update_resume_record(db: Session, user_email: str, filename: str, file_path:
     resume = db.query(Resume).filter(Resume.user_id == user.user_id).first()
     if resume:
         resume.filename = filename
-        resume.file_path = file_path  # Store the path
+        resume.file_path = file_path
         resume.uploaded_at = datetime.datetime.utcnow()
     else:
         resume = Resume(
             user_id=user.user_id,
             filename=filename,
-            file_path=file_path,  # Store path on creation
+            file_path=file_path,
             uploaded_at=datetime.datetime.utcnow()
         )
         db.add(resume)
@@ -203,14 +345,12 @@ def update_vector_meta_record(db: Session, user_email: str, resume_id: int, fais
     ).first()
 
     if vector_meta:
-        # Update fields if new values are provided
         if faiss_vector_id and faiss_vector_id != vector_meta.faiss_vector_id:
             vector_meta.faiss_vector_id = faiss_vector_id
         if vector_folder_path:
             vector_meta.vector_folder_path = vector_folder_path
         vector_meta.created_at = datetime.datetime.utcnow()
     else:
-        # Create new record with unique faiss_vector_id if not provided
         if not faiss_vector_id:
             faiss_vector_id = str(uuid.uuid4())
         vector_meta = VectorMeta(
@@ -225,3 +365,4 @@ def update_vector_meta_record(db: Session, user_email: str, resume_id: int, fais
     db.commit()
     db.refresh(vector_meta)
     return vector_meta
+
