@@ -13,6 +13,11 @@ import numpy as np
 from sqlmodel import Session
 from app.models import VectorMeta, User
 from typing import Dict, List, Optional
+from numpy.linalg import norm
+from dotenv import load_dotenv
+from langchain_cohere import ChatCohere
+from langchain_core.messages import HumanMessage
+
 
 
 def load_jd(file=None, text=None):
@@ -214,8 +219,6 @@ def create_jd_section_embeddings(jd_json_dir: str,
 
 
 
-from numpy.linalg import norm
-
 def cosine_similarity(v1: np.ndarray, v2: np.ndarray) -> float:
     if norm(v1) == 0 or norm(v2) == 0:
         return 0.0
@@ -340,3 +343,41 @@ def relevance_search(
             results[jd_section] = relevant_resume_chunks
 
     return results
+
+#LLM INTEGRATION:
+load_dotenv() 
+api_key = os.getenv("COHERE_API_KEY")
+
+# Initialize ChatCohere LLM with your API key and model
+chat = ChatCohere(api_key=api_key, model="command-r-plus-08-2024", temperature=0.7, max_tokens=512)
+
+def job_relevance(resume_chunks: str, jd_sections: str) -> str:
+    """
+    Use Cohere Chat model to generate relevance summary from resume chunks and job description sections.
+
+    Args:
+        resume_chunks (str): Extracted relevant chunks from candidate resume.
+        jd_sections (str): Extracted sections from job description.
+
+    Returns:
+        str: Generated relevance and fit summary from the LLM.
+    """
+    messages = [
+        HumanMessage(
+            content=f"""
+            You are a smart AI assistant. You are given these relevant resume chunks extracted based on the job description provided.
+
+            Relevant Resume Chunks:
+            {resume_chunks}
+
+            Job Description Sections:
+            {jd_sections}
+
+            Based on these, generate a response telling how relevant this job is to the candidate based on their profile.
+            Mention the relevant skills, experience, projects, and overall fit for the role.
+            """
+        )
+    ]
+
+    response = chat.invoke(messages)
+    return response.content

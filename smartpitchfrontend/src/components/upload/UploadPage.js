@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 
 export default function UploadPage() {
   // Resume states
@@ -8,10 +8,9 @@ export default function UploadPage() {
   // JD states
   const [jdFile, setJdFile] = useState(null);
   const [jdText, setJdText] = useState("");
-  const [jdJsonFiles, setJdJsonFiles] = useState(null);
-  const [jsonContents, setJsonContents] = useState({}); // To store each JSON file's content
-  const [jdEmbeddingFiles, setJdEmbeddingFiles] = useState(null); // New: Section-wise embedding file paths
-  const [relevanceResults, setRelevanceResults] = useState(null); // New: show relevance_search output
+  
+  // Final LLM response state
+  const [llmResponse, setLlmResponse] = useState(null);
 
   // Message and loading flags
   const [message, setMessage] = useState("");
@@ -23,6 +22,7 @@ export default function UploadPage() {
   const handleResumeFileChange = (e) => {
     setResumeFile(e.target.files[0]);
     setResumeExtracted(null);
+    setLlmResponse(null);
     setMessage("");
   };
 
@@ -38,6 +38,7 @@ export default function UploadPage() {
     }
     setLoading(true);
     setMessage("");
+    setLlmResponse(null);
     const formData = new FormData();
     formData.append("file", resumeFile);
 
@@ -69,29 +70,20 @@ export default function UploadPage() {
   const handleJdFileChange = (e) => {
     setJdFile(e.target.files[0]);
     setJdText("");
-    setJdJsonFiles(null);
-    setJsonContents({});
-    setJdEmbeddingFiles(null);
-    setRelevanceResults(null);
+    setLlmResponse(null);
     setMessage("");
   };
 
   const handleJdTextChange = (e) => {
     setJdText(e.target.value);
     setJdFile(null);
-    setJdJsonFiles(null);
-    setJsonContents({});
-    setJdEmbeddingFiles(null);
-    setRelevanceResults(null);
+    setLlmResponse(null);
     setMessage("");
   };
 
   const handleJdSubmit = async (e) => {
     e.preventDefault();
-    setJdJsonFiles(null);
-    setJsonContents({});
-    setJdEmbeddingFiles(null);
-    setRelevanceResults(null);
+    setLlmResponse(null);
     if (!jdText && !jdFile) {
       setMessage("Please paste JD text or select a JD PDF file to upload.");
       return;
@@ -118,12 +110,10 @@ export default function UploadPage() {
       });
       if (res.ok) {
         const data = await res.json();
-        setMessage("JD processed and JSON, Embedding & Relevance data created!");
+        setMessage("JD processed and relevance summary generated!");
         setJdFile(null);
         setJdText("");
-        setJdJsonFiles(data.jd_json_files);
-        setJdEmbeddingFiles(data.jd_embedding_files);
-        setRelevanceResults(data.relevance_results);
+        setLlmResponse(data.llm_relevance_summary);  // Use only the LLM response here
       } else {
         const errData = await res.json();
         setMessage(errData.detail || "JD upload failed.");
@@ -134,33 +124,6 @@ export default function UploadPage() {
       setLoading(false);
     }
   };
-
-  // Fetch content for each JD JSON file section
-  useEffect(() => {
-    const fetchJsonContents = async () => {
-      if (!jdJsonFiles) return;
-      const contents = {};
-      for (const section of Object.keys(jdJsonFiles)) {
-        try {
-          const res = await fetch(
-            `http://localhost:8000/upload/jd/json-content?section=${encodeURIComponent(section)}`,
-            { headers: { Authorization: `Bearer ${token}` }}
-          );
-          if (res.ok) {
-            const json = await res.json();
-            contents[section] = json;
-          } else {
-            contents[section] = "Failed to load content";
-          }
-        } catch {
-          contents[section] = "Error loading content";
-        }
-      }
-      setJsonContents(contents);
-    };
-
-    fetchJsonContents();
-  }, [jdJsonFiles, token]);
 
   return (
     <div style={{ maxWidth: 700, margin: "auto", padding: 20 }}>
@@ -209,56 +172,11 @@ export default function UploadPage() {
         </div>
       </form>
 
-      {/* JD JSON Files Display */}
-      {jdJsonFiles && (
-        <div style={{ marginTop: 24, padding: 10, border: "1px solid #ccc", background: "#f0f0f0" }}>
-          <h4>JD JSON File Paths & Contents</h4>
-          <ul style={{ fontSize: 13, wordBreak: "break-word" }}>
-            {Object.entries(jdJsonFiles).map(([section, path]) => (
-              <li key={section} style={{ marginBottom: 20 }}>
-                <strong>{section}:</strong> {path}
-                <pre
-                  style={{
-                    marginTop: 8,
-                    backgroundColor: "#fff",
-                    padding: 10,
-                    border: "1px solid #ddd",
-                    whiteSpace: "pre-wrap",
-                    maxHeight: 200,
-                    overflow: "auto",
-                  }}
-                >
-                  {jsonContents[section]
-                    ? JSON.stringify(jsonContents[section], null, 2)
-                    : "Loading..."}
-                </pre>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* JD Embedding Files Display */}
-      {jdEmbeddingFiles && (
-        <div style={{ marginTop: 24, padding: 10, border: "1px solid #ccc", background: "#e0f7fa" }}>
-          <h4>JD Section-Wise Embedding Files</h4>
-          <ul style={{ fontSize: 13, wordBreak: "break-word" }}>
-            {Object.entries(jdEmbeddingFiles).map(([section, path]) => (
-              <li key={section}>
-                <strong>{section}:</strong> {path}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Relevance Search Results Display */}
-      {relevanceResults && (
+      {/* LLM Final Response Display */}
+      {llmResponse && (
         <div style={{ marginTop: 24, padding: 10, border: "1px solid #ccc", background: "#d0f0d0" }}>
-          <h4>Relevance Search Results</h4>
-          <pre style={{ fontSize: 13, whiteSpace: "pre-wrap" }}>
-            {JSON.stringify(relevanceResults, null, 2)}
-          </pre>
+          <h4>Job Relevance Summary from AI</h4>
+          <pre style={{ whiteSpace: "pre-wrap", fontSize: 14 }}>{llmResponse}</pre>
         </div>
       )}
 
