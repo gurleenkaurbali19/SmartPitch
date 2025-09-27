@@ -13,7 +13,7 @@ from app.utils.upload_jd_utils import (
     create_jd_json_files,
     create_jd_section_embeddings,
     relevance_search,
-    job_relevance  # Import your new job_relevance function here
+    job_relevance  
 )
 
 router = APIRouter()
