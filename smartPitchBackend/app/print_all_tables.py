@@ -1,5 +1,5 @@
 from app.database import SessionLocal
-from app.models import User, Resume, VectorMeta, EmailLog, JobDescription
+from app.models import User, Resume, VectorMeta
 from sqlalchemy.orm import Session
 
 def print_all_rows(db: Session):
@@ -7,8 +7,6 @@ def print_all_rows(db: Session):
         ("Users", User),
         ("Resumes", Resume),
         ("VectorMeta", VectorMeta),
-        ("EmailLogs", EmailLog),
-        ("JobDescriptions", JobDescription),
     ]
 
     for table_name, model in tables:

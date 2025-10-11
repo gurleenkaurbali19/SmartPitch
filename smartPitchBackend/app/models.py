@@ -13,9 +13,8 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     resumes = relationship("Resume", back_populates="user", cascade="all, delete-orphan")
-    email_logs = relationship("EmailLog", back_populates="user", cascade="all, delete-orphan")
     vectors = relationship("VectorMeta", back_populates="user", cascade="all, delete-orphan")
-    job_descriptions = relationship("JobDescription", back_populates="user", cascade="all, delete-orphan")
+   
 
 
 class Resume(Base):
@@ -50,25 +49,3 @@ class VectorMeta(Base):
         UniqueConstraint("user_id", "resume_id", name="uq_user_resume_vector"),
     )
 
-
-class JobDescription(Base):
-    __tablename__ = "job_descriptions"
-
-    jd_id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False, index=True)
-    file_path = Column(String, nullable=False)  # Path to user's JD folder
-    uploaded_at = Column(DateTime, default=datetime.datetime.utcnow)
-
-    user = relationship("User", back_populates="job_descriptions")
-
-
-class EmailLog(Base):
-    __tablename__ = "email_logs"
-
-    sent_id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False, index=True)
-    recipient_email = Column(String, nullable=False)
-    subject = Column(String, nullable=True)
-    sent_at = Column(DateTime, default=datetime.datetime.utcnow)
-
-    user = relationship("User", back_populates="email_logs")
