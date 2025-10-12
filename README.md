@@ -3,6 +3,29 @@
 
 ---
 
+<table>
+  <tr>
+    <td align="center">
+      <img src="https://github.com/user-attachments/assets/1f9f2af3-a6d0-43c0-b3dc-077a8aa68fc7" width="300" alt="Login Page" />
+      <br/>
+      <b>Login Page</b>
+    </td>
+    <td align="center">
+      <img src="https://github.com/user-attachments/assets/974b435f-b312-436d-839d-37b3ea0e06ab" width="300" alt="Resume Upload" />
+      <br/>
+      <b>Home page</b>
+    </td>
+    <td align="center">
+      <img src="https://github.com/user-attachments/assets/b078617d-8aaf-41e8-8046-1f1b6af37390" width="300" alt="Relevance Summary" />
+      <br/>
+      <b>Resume/JD upload page</b>
+    </td>
+  </tr>
+</table>
+
+
+
+
 ## 🧠 Overview
 
 **SmartPitch** is an AI-powered full-stack platform that helps users **create smart, personalized job applications**.  
